@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 BOOTSTRAP_SERVERS = 'localhost:9092'
 TOPIC = 'test-topic'
+POLL_MESSAGES = 100  # Number of max messages to fetch per poll
+POLL_TIMEOUT = 5.0  # seconds
 
 
 class CustomerEventConsumer:
@@ -32,28 +34,31 @@ class CustomerEventConsumer:
             self.consumer.subscribe([self.topic])
 
             while True:
-                msg = self.consumer.poll(timeout=1.0)  # Poll for messages
-                if msg is None:
-                    continue
-                if msg.error():
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
-                        logger.info(f"Reached end of partition {msg.partition()}")
-                        continue
-                    else:
-                        logger.error(f"Consumer error: {msg.error()}")
-                        raise KafkaException(msg.error())
+                # Fetch up to 100 messages per round
+                messages = self.consumer.consume(num_messages=POLL_MESSAGES, timeout=POLL_TIMEOUT)
 
-                # Decode and parse the message
-                try:
-                    key = msg.key().decode('utf-8') if msg.key() else None
-                    value = msg.value().decode('utf-8')
-                    json_data = json.loads(value)  # Parse JSON
-                    pretty_json = json.dumps(json_data, indent=2)  # Pretty-print JSON
-                    logger.info(f"Received message (key={key}):\n{pretty_json}")
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to decode JSON: {e} (message: {value})")
-                except Exception as e:
-                    logger.error(f"Error processing message: {e}")
+                for msg in messages:
+                    if msg.error():
+                        if msg.error().code() == KafkaError._PARTITION_EOF:
+                            logger.info(f"Reached end of partition {msg.partition()}")
+                            continue
+                        else:
+                            logger.error(f"Consumer error: {msg.error()}")
+                            raise KafkaException(msg.error())
+
+                    # Decode and parse the message
+                    try:
+                        key = msg.key().decode('utf-8') if msg.key() else None
+                        value = msg.value().decode('utf-8')
+                        json_data = json.loads(value)  # Parse JSON
+                        pretty_json = json.dumps(json_data, indent=2)  # Pretty-print JSON
+                        logger.info(f"Received message (key={key}):\n{pretty_json}")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to decode JSON: {e} (message: {value})")
+                    except Exception as e:
+                        logger.error(f"Error processing message: {e}")
+
+                logger.info(f"Processed {len(messages)} messages in this round")
 
         except KeyboardInterrupt:
             logger.info("Consumer interrupted by user")
