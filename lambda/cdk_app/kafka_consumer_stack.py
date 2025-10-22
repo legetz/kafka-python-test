@@ -40,8 +40,6 @@ class KafkaConsumerLambdaStack(Stack):
         """
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
-
         # Lambda layer for Kafka dependencies
         kafka_layer = lambda_.LayerVersion(
             self,
