@@ -184,9 +184,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: lambda/package-lock.json
 
-      - name: Install Node.js dependencies
-        run: cd lambda && npm install
-
       - name: Download layer artifact
         uses: actions/download-artifact@v4
         with:
@@ -220,6 +217,7 @@ jobs:
       - name: CDK Synth
         run: |
           cd lambda
+          npm install -g aws-cdk@^2.1030.0
           cdk synth
 
       - name: Upload CDK template
