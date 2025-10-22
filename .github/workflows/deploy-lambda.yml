@@ -168,7 +168,6 @@ jobs:
     env:
       ENVIRONMENT: ${{ needs.setup.outputs.environment }}
       CDK_DEFAULT_ACCOUNT: ${{ needs.setup.outputs.aws-account }}
-      CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -213,6 +212,8 @@ jobs:
               ;;
           esac
 
+          echo "CDK_DEFAULT_REGION=${{ env.AWS_REGION }}" >> $GITHUB_ENV
+          
       - name: CDK Synth
         run: |
           cd lambda
