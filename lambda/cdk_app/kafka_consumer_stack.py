@@ -73,7 +73,7 @@ class KafkaConsumerLambdaStack(Stack):
             function_name=f"kafka-consumer-lambda-{environment}",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("lambda/lambda_function"),
+            code=lambda_.Code.from_asset("lambda_function"),
             layers=[kafka_layer],  # Attach the Kafka libraries layer
             timeout=Duration.minutes(5),  # Max time for processing
             memory_size=512,
