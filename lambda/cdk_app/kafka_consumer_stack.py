@@ -25,7 +25,7 @@ class KafkaConsumerLambdaStack(Stack):
         kafka_bootstrap_servers: str,
         kafka_topic: str,
         environment: str = "dev",
-        **kwargs
+        **kwargs,
     ) -> None:
         """
         Initialize the Kafka Consumer Lambda Stack.
@@ -58,12 +58,10 @@ class KafkaConsumerLambdaStack(Stack):
             "KafkaConsumerOffsets",
             table_name=f"kafka-consumer-offsets-{environment}",
             partition_key=dynamodb.Attribute(
-                name="consumer_id",
-                type=dynamodb.AttributeType.STRING
+                name="consumer_id", type=dynamodb.AttributeType.STRING
             ),
             sort_key=dynamodb.Attribute(
-                name="partition",
-                type=dynamodb.AttributeType.NUMBER
+                name="partition", type=dynamodb.AttributeType.NUMBER
             ),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.RETAIN,  # Keep data on stack deletion
@@ -117,11 +115,7 @@ class KafkaConsumerLambdaStack(Stack):
             rule_name=f"kafka-consumer-schedule-{environment}",
             description=f"Triggers Kafka consumer Lambda every minute ({environment})",
             schedule=events.Schedule.cron(
-                minute="*",  # Every minute
-                hour="*",
-                month="*",
-                week_day="*",
-                year="*"
+                minute="*", hour="*", month="*", week_day="*", year="*"  # Every minute
             ),
             enabled=True,
         )

@@ -16,17 +16,16 @@ from cdk_app.kafka_consumer_stack import KafkaConsumerLambdaStack
 
 # Configuration - Update these values for your environment
 KAFKA_BOOTSTRAP_SERVERS = os.environ.get(
-    'KAFKA_BOOTSTRAP_SERVERS',
-    'localhost:9092'  # Default for local testing
+    "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"  # Default for local testing
 )
-KAFKA_TOPIC = os.environ.get('KAFKA_TOPIC', 'test-topic')
+KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "test-topic")
 
 # AWS Account and Region
-AWS_ACCOUNT = os.environ.get('CDK_DEFAULT_ACCOUNT')
-AWS_REGION = os.environ.get('CDK_DEFAULT_REGION', 'us-east-1')
+AWS_ACCOUNT = os.environ.get("CDK_DEFAULT_ACCOUNT")
+AWS_REGION = os.environ.get("CDK_DEFAULT_REGION", "us-east-1")
 
 # Environment (dev/test/prod)
-ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
 
 app = App()
 
@@ -37,11 +36,8 @@ stack = KafkaConsumerLambdaStack(
     kafka_bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
     kafka_topic=KAFKA_TOPIC,
     environment=ENVIRONMENT,
-    env=Environment(
-        account=AWS_ACCOUNT,
-        region=AWS_REGION
-    ),
-    description=f"Kafka consumer Lambda with EventBridge scheduling ({ENVIRONMENT})"
+    env=Environment(account=AWS_ACCOUNT, region=AWS_REGION),
+    description=f"Kafka consumer Lambda with EventBridge scheduling ({ENVIRONMENT})",
 )
 
 # Add tags for all resources

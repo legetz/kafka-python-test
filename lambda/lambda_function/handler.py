@@ -5,7 +5,13 @@ import logging
 import os
 from typing import Dict, Any, Optional
 import boto3
-from confluent_kafka import Consumer, KafkaError, KafkaException, Message, TopicPartition
+from confluent_kafka import (
+    Consumer,
+    KafkaError,
+    KafkaException,
+    Message,
+    TopicPartition,
+)
 from botocore.exceptions import ClientError
 
 # Configure logging
@@ -13,15 +19,15 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Environment variables
-BOOTSTRAP_SERVERS = os.environ.get('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
-TOPIC = os.environ.get('KAFKA_TOPIC', 'test-topic')
-GROUP_ID = os.environ.get('KAFKA_GROUP_ID', 'lambda-consumer-group')
-DYNAMODB_TABLE = os.environ.get('DYNAMODB_TABLE', 'kafka-consumer-offsets')
-MAX_MESSAGES = int(os.environ.get('MAX_MESSAGES', '1000'))
-POLL_TIMEOUT = float(os.environ.get('POLL_TIMEOUT', '5.0'))
+BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+TOPIC = os.environ.get("KAFKA_TOPIC", "test-topic")
+GROUP_ID = os.environ.get("KAFKA_GROUP_ID", "lambda-consumer-group")
+DYNAMODB_TABLE = os.environ.get("DYNAMODB_TABLE", "kafka-consumer-offsets")
+MAX_MESSAGES = int(os.environ.get("MAX_MESSAGES", "1000"))
+POLL_TIMEOUT = float(os.environ.get("POLL_TIMEOUT", "5.0"))
 
 # Initialize DynamoDB client
-dynamodb = boto3.resource('dynamodb')
+dynamodb = boto3.resource("dynamodb")
 
 
 class DynamoDBOffsetStore:
@@ -49,15 +55,14 @@ class DynamoDBOffsetStore:
         """
         try:
             response = self.table.get_item(
-                Key={
-                    'consumer_id': self.consumer_id,
-                    'partition': partition
-                }
+                Key={"consumer_id": self.consumer_id, "partition": partition}
             )
-            item = response.get('Item')
+            item = response.get("Item")
             if item:
-                logger.info(f"Retrieved offset {item['offset']} for partition {partition}")
-                return item['offset']
+                logger.info(
+                    f"Retrieved offset {item['offset']} for partition {partition}"
+                )
+                return item["offset"]
             logger.info(f"No stored offset found for partition {partition}")
             return None
         except ClientError as e:
@@ -78,11 +83,11 @@ class DynamoDBOffsetStore:
         try:
             self.table.put_item(
                 Item={
-                    'consumer_id': self.consumer_id,
-                    'partition': partition,
-                    'offset': offset,
-                    'topic': TOPIC,
-                    'group_id': GROUP_ID
+                    "consumer_id": self.consumer_id,
+                    "partition": partition,
+                    "offset": offset,
+                    "topic": TOPIC,
+                    "group_id": GROUP_ID,
                 }
             )
             logger.info(f"Saved offset {offset} for partition {partition}")
@@ -115,11 +120,11 @@ class KafkaMessageProcessor:
             Configured Kafka consumer
         """
         consumer_config = {
-            'bootstrap.servers': BOOTSTRAP_SERVERS,
-            'group.id': GROUP_ID,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,  # Manual commit for better control
-            'max.poll.interval.ms': 300000,  # 5 minutes
+            "bootstrap.servers": BOOTSTRAP_SERVERS,
+            "group.id": GROUP_ID,
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,  # Manual commit for better control
+            "max.poll.interval.ms": 300000,  # 5 minutes
         }
 
         consumer = Consumer(consumer_config)
@@ -139,10 +144,14 @@ class KafkaMessageProcessor:
             # Start from next message after the last processed one
             tp = TopicPartition(TOPIC, partition, last_offset + 1)
             consumer.assign([tp])
-            logger.info(f"Starting from offset {last_offset + 1} for partition {partition}")
+            logger.info(
+                f"Starting from offset {last_offset + 1} for partition {partition}"
+            )
         else:
             # Let auto.offset.reset handle it
-            logger.info(f"No stored offset, using auto.offset.reset for partition {partition}")
+            logger.info(
+                f"No stored offset, using auto.offset.reset for partition {partition}"
+            )
 
     def _process_message(self, msg: Message) -> bool:
         """
@@ -155,8 +164,8 @@ class KafkaMessageProcessor:
             True if processing succeeded, False otherwise
         """
         try:
-            key = msg.key().decode('utf-8') if msg.key() else None
-            value = msg.value().decode('utf-8')
+            key = msg.key().decode("utf-8") if msg.key() else None
+            value = msg.value().decode("utf-8")
             json_data = json.loads(value)
 
             logger.info(
@@ -198,7 +207,9 @@ class KafkaMessageProcessor:
             assignment = self.consumer.assignment()
 
             if assignment:
-                logger.info(f"Assigned partitions: {[tp.partition for tp in assignment]}")
+                logger.info(
+                    f"Assigned partitions: {[tp.partition for tp in assignment]}"
+                )
                 # Set offsets for assigned partitions
                 for tp in assignment:
                     self._set_partition_offset(self.consumer, tp.partition)
@@ -228,17 +239,17 @@ class KafkaMessageProcessor:
                 self.offset_store.save_offset(partition, offset)
 
             return {
-                'messages_processed': self.messages_processed,
-                'last_offsets': self.last_offsets,
-                'status': 'success'
+                "messages_processed": self.messages_processed,
+                "last_offsets": self.last_offsets,
+                "status": "success",
             }
 
         except Exception as e:
             logger.error(f"Error in message processing: {e}", exc_info=True)
             return {
-                'messages_processed': self.messages_processed,
-                'error': str(e),
-                'status': 'error'
+                "messages_processed": self.messages_processed,
+                "error": str(e),
+                "status": "error",
             }
 
         finally:
@@ -268,17 +279,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         logger.info(f"Processing completed: {result}")
 
-        return {
-            'statusCode': 200,
-            'body': json.dumps(result)
-        }
+        return {"statusCode": 200, "body": json.dumps(result)}
 
     except Exception as e:
         logger.error(f"Lambda execution failed: {e}", exc_info=True)
         return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'status': 'error',
-                'error': str(e)
-            })
+            "statusCode": 500,
+            "body": json.dumps({"status": "error", "error": str(e)}),
         }
