@@ -35,14 +35,14 @@ env:
 jobs:
   # Determine which environment to deploy to based on branch
   setup:
-    name: Setup Environment
+    name: Identify environment
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.set-env.outputs.environment }}
       aws-account: ${{ steps.set-env.outputs.aws-account }}
       stack-name: ${{ steps.set-env.outputs.stack-name }}
     steps:
-      - name: Determine Environment
+      - name: Identify environment
         id: set-env
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
@@ -101,14 +101,13 @@ jobs:
         run: |
           pip install flake8 black pylint mypy
 
-      - name: Run flake8
+      - name: Run flake8 linting
         run: |
           flake8 lambda --max-line-length=100
 
-      - name: Run black (check only)
+      - name: Run black code formatting check
         run: |
-          black --check lambda/lambda_function/handler.py lambda/cdk_app/
-        continue-on-error: true
+          black --check lambda
 
       - name: Validate Lambda handler
         run: |
@@ -233,7 +232,7 @@ jobs:
 
   # Deploy to AWS
   deploy:
-    name: Deploy to ${{ needs.setup.outputs.environment }}
+    name: Deploy to AWS
     runs-on: ubuntu-latest
     needs: [setup, synth]
     environment:
