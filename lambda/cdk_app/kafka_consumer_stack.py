@@ -45,7 +45,7 @@ class KafkaConsumerLambdaStack(Stack):
             self,
             "KafkaLibrariesLayer",
             layer_version_name=f"kafka-libraries-{environment}",
-            code=lambda_.Code.from_asset("lambda/layer/python"),
+            code=lambda_.Code.from_asset("layer/python"),
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_11],
             description=f"Confluent Kafka library for Python 3.11 ({environment})",
         )
