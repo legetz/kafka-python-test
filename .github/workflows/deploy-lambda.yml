@@ -103,8 +103,7 @@ jobs:
 
       - name: Run flake8
         run: |
-          flake8 lambda/lambda_function/handler.py lambda/cdk_app/ --max-line-length=100 --exclude=__pycache__
-        continue-on-error: true
+          flake8 lambda --max-line-length=100
 
       - name: Run black (check only)
         run: |

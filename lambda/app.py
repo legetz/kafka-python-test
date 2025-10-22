@@ -41,7 +41,7 @@ stack = KafkaConsumerLambdaStack(
         account=AWS_ACCOUNT,
         region=AWS_REGION
     ),
-    description=f"Kafka consumer Lambda with DynamoDB offset storage and EventBridge scheduling ({ENVIRONMENT})"
+    description=f"Kafka consumer Lambda with EventBridge scheduling ({ENVIRONMENT})"
 )
 
 # Add tags for all resources
