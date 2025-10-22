@@ -1,0 +1,425 @@
+name: Deploy Kafka Lambda Consumer
+
+on:
+  push:
+    branches:
+      - dev
+      - test
+      - main
+    paths:
+      - 'lambda/**'
+      - '.github/workflows/deploy-lambda.yml'
+  pull_request:
+    branches:
+      - dev
+      - test
+      - main
+    paths:
+      - 'lambda/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - prod
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+  AWS_REGION: 'us-east-1'
+
+jobs:
+  # Determine which environment to deploy to based on branch
+  setup:
+    name: Setup Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      aws-account: ${{ steps.set-env.outputs.aws-account }}
+      stack-name: ${{ steps.set-env.outputs.stack-name }}
+    steps:
+      - name: Determine Environment
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          else
+            case "${{ github.ref_name }}" in
+              dev)
+                ENV="dev"
+                ;;
+              test)
+                ENV="test"
+                ;;
+              main)
+                ENV="prod"
+                ;;
+              *)
+                ENV="dev"
+                ;;
+            esac
+          fi
+          
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "stack-name=KafkaConsumerLambdaStack-$ENV" >> $GITHUB_OUTPUT
+          
+          # Map environment to AWS account (from secrets)
+          case "$ENV" in
+            dev)
+              echo "aws-account=${{ secrets.AWS_ACCOUNT_DEV }}" >> $GITHUB_OUTPUT
+              ;;
+            test)
+              echo "aws-account=${{ secrets.AWS_ACCOUNT_TEST }}" >> $GITHUB_OUTPUT
+              ;;
+            prod)
+              echo "aws-account=${{ secrets.AWS_ACCOUNT_PROD }}" >> $GITHUB_OUTPUT
+              ;;
+          esac
+          
+          echo "🎯 Deploying to: $ENV"
+          echo "📦 Stack name: KafkaConsumerLambdaStack-$ENV"
+
+  # Lint and validate code
+  lint:
+    name: Lint & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install linting tools
+        run: |
+          pip install flake8 black pylint mypy
+
+      - name: Run flake8
+        run: |
+          flake8 lambda/lambda_function/handler.py lambda/cdk_app/ --max-line-length=100 --exclude=__pycache__
+        continue-on-error: true
+
+      - name: Run black (check only)
+        run: |
+          black --check lambda/lambda_function/handler.py lambda/cdk_app/
+        continue-on-error: true
+
+      - name: Validate Lambda handler
+        run: |
+          cd lambda/lambda_function
+          python -m py_compile handler.py
+
+      - name: Validate CDK app
+        run: |
+          cd lambda
+          python -m py_compile app.py cdk_app/*.py
+
+  # Build Lambda layer
+  build-layer:
+    name: Build Lambda Layer
+    runs-on: ubuntu-latest
+    needs: [setup, lint]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Build Lambda Layer
+        run: |
+          cd lambda
+          chmod +x build_layer.sh
+          ./build_layer.sh
+
+      - name: Check layer size
+        run: |
+          LAYER_SIZE=$(du -sb lambda/layer/python | cut -f1)
+          LAYER_SIZE_MB=$((LAYER_SIZE / 1024 / 1024))
+          echo "📦 Layer size: ${LAYER_SIZE_MB}MB"
+          
+          if [ $LAYER_SIZE_MB -gt 250 ]; then
+            echo "❌ Layer size exceeds 250MB limit!"
+            exit 1
+          fi
+          
+          echo "✅ Layer size is within limits"
+
+      - name: Upload layer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-layer
+          path: lambda/layer/python
+          retention-days: 1
+
+  # Synthesize CDK stack
+  synth:
+    name: CDK Synth
+    runs-on: ubuntu-latest
+    needs: [setup, build-layer]
+    env:
+      ENVIRONMENT: ${{ needs.setup.outputs.environment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: lambda/package-lock.json
+
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk
+
+      - name: Download layer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-layer
+          path: lambda/layer/python
+
+      - name: Install CDK dependencies
+        run: |
+          cd lambda
+          pip install -r requirements.txt
+
+      - name: Set environment variables
+        run: |
+          case "${{ env.ENVIRONMENT }}" in
+            dev)
+              echo "KAFKA_BOOTSTRAP_SERVERS=${{ secrets.KAFKA_BOOTSTRAP_SERVERS_DEV }}" >> $GITHUB_ENV
+              echo "KAFKA_TOPIC=${{ secrets.KAFKA_TOPIC_DEV }}" >> $GITHUB_ENV
+              ;;
+            test)
+              echo "KAFKA_BOOTSTRAP_SERVERS=${{ secrets.KAFKA_BOOTSTRAP_SERVERS_TEST }}" >> $GITHUB_ENV
+              echo "KAFKA_TOPIC=${{ secrets.KAFKA_TOPIC_TEST }}" >> $GITHUB_ENV
+              ;;
+            prod)
+              echo "KAFKA_BOOTSTRAP_SERVERS=${{ secrets.KAFKA_BOOTSTRAP_SERVERS_PROD }}" >> $GITHUB_ENV
+              echo "KAFKA_TOPIC=${{ secrets.KAFKA_TOPIC_PROD }}" >> $GITHUB_ENV
+              ;;
+          esac
+          
+          echo "CDK_DEFAULT_ACCOUNT=${{ needs.setup.outputs.aws-account }}" >> $GITHUB_ENV
+          echo "CDK_DEFAULT_REGION=${{ env.AWS_REGION }}" >> $GITHUB_ENV
+
+      - name: CDK Synth
+        run: |
+          cd lambda
+          cdk synth
+
+      - name: Upload CDK template
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdk-template-${{ env.ENVIRONMENT }}
+          path: lambda/cdk.out
+          retention-days: 7
+
+  # Deploy to AWS
+  deploy:
+    name: Deploy to ${{ needs.setup.outputs.environment }}
+    runs-on: ubuntu-latest
+    needs: [setup, synth]
+    environment:
+      name: ${{ needs.setup.outputs.environment }}
+      url: https://console.aws.amazon.com/lambda/home?region=${{ env.AWS_REGION }}#/functions/kafka-consumer-lambda-${{ needs.setup.outputs.environment }}
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    env:
+      ENVIRONMENT: ${{ needs.setup.outputs.environment }}
+      AWS_ACCOUNT: ${{ needs.setup.outputs.aws-account }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk
+
+      - name: Download layer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-layer
+          path: lambda/layer/python
+
+      - name: Download CDK template
+        uses: actions/download-artifact@v4
+        with:
+          name: cdk-template-${{ env.ENVIRONMENT }}
+          path: lambda/cdk.out
+
+      - name: Install CDK dependencies
+        run: |
+          cd lambda
+          pip install -r requirements.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT }}:role/${{ secrets.AWS_DEPLOY_ROLE_NAME }}
+          role-session-name: github-actions-deploy-${{ env.ENVIRONMENT }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set environment variables
+        run: |
+          case "${{ env.ENVIRONMENT }}" in
+            dev)
+              echo "KAFKA_BOOTSTRAP_SERVERS=${{ secrets.KAFKA_BOOTSTRAP_SERVERS_DEV }}" >> $GITHUB_ENV
+              echo "KAFKA_TOPIC=${{ secrets.KAFKA_TOPIC_DEV }}" >> $GITHUB_ENV
+              ;;
+            test)
+              echo "KAFKA_BOOTSTRAP_SERVERS=${{ secrets.KAFKA_BOOTSTRAP_SERVERS_TEST }}" >> $GITHUB_ENV
+              echo "KAFKA_TOPIC=${{ secrets.KAFKA_TOPIC_TEST }}" >> $GITHUB_ENV
+              ;;
+            prod)
+              echo "KAFKA_BOOTSTRAP_SERVERS=${{ secrets.KAFKA_BOOTSTRAP_SERVERS_PROD }}" >> $GITHUB_ENV
+              echo "KAFKA_TOPIC=${{ secrets.KAFKA_TOPIC_PROD }}" >> $GITHUB_ENV
+              ;;
+          esac
+          
+          echo "CDK_DEFAULT_ACCOUNT=${{ env.AWS_ACCOUNT }}" >> $GITHUB_ENV
+          echo "CDK_DEFAULT_REGION=${{ env.AWS_REGION }}" >> $GITHUB_ENV
+
+      - name: CDK Bootstrap (if needed)
+        run: |
+          cd lambda
+          cdk bootstrap aws://${{ env.AWS_ACCOUNT }}/${{ env.AWS_REGION }} || true
+
+      - name: CDK Deploy
+        run: |
+          cd lambda
+          cdk deploy --require-approval never --outputs-file outputs-${{ env.ENVIRONMENT }}.json
+
+      - name: Upload deployment outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-outputs-${{ env.ENVIRONMENT }}
+          path: lambda/outputs-${{ env.ENVIRONMENT }}.json
+          retention-days: 30
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ env.ENVIRONMENT }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **AWS Account:** ${{ env.AWS_ACCOUNT }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stack:** ${{ needs.setup.outputs.stack-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f lambda/outputs-${{ env.ENVIRONMENT }}.json ]; then
+            echo "### Stack Outputs" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat lambda/outputs-${{ env.ENVIRONMENT }}.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Smoke tests after deployment
+  smoke-test:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [setup, deploy]
+    env:
+      ENVIRONMENT: ${{ needs.setup.outputs.environment }}
+      AWS_ACCOUNT: ${{ needs.setup.outputs.aws-account }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT }}:role/${{ secrets.AWS_DEPLOY_ROLE_NAME }}
+          role-session-name: github-actions-test-${{ env.ENVIRONMENT }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check Lambda function exists
+        run: |
+          aws lambda get-function --function-name kafka-consumer-lambda-${{ env.ENVIRONMENT }} || exit 1
+          echo "✅ Lambda function exists"
+
+      - name: Check DynamoDB table exists
+        run: |
+          aws dynamodb describe-table --table-name kafka-consumer-offsets-${{ env.ENVIRONMENT }} || exit 1
+          echo "✅ DynamoDB table exists"
+
+      - name: Check EventBridge rule exists
+        run: |
+          aws events describe-rule --name kafka-consumer-schedule-${{ env.ENVIRONMENT }} || exit 1
+          echo "✅ EventBridge rule exists"
+
+      - name: Invoke Lambda function (test)
+        run: |
+          RESULT=$(aws lambda invoke \
+            --function-name kafka-consumer-lambda-${{ env.ENVIRONMENT }} \
+            --payload '{}' \
+            --cli-binary-format raw-in-base64-out \
+            response.json)
+          
+          echo "Lambda invocation result:"
+          cat response.json
+          
+          STATUS_CODE=$(echo $RESULT | jq -r '.StatusCode')
+          if [ "$STATUS_CODE" != "200" ]; then
+            echo "❌ Lambda invocation failed with status code: $STATUS_CODE"
+            exit 1
+          fi
+          
+          echo "✅ Lambda function invoked successfully"
+
+      - name: Check recent logs
+        run: |
+          LOG_GROUP="/aws/lambda/kafka-consumer-lambda-${{ env.ENVIRONMENT }}"
+          
+          # Get latest log stream
+          LATEST_STREAM=$(aws logs describe-log-streams \
+            --log-group-name "$LOG_GROUP" \
+            --order-by LastEventTime \
+            --descending \
+            --max-items 1 \
+            --query 'logStreams[0].logStreamName' \
+            --output text)
+          
+          if [ "$LATEST_STREAM" != "None" ] && [ -n "$LATEST_STREAM" ]; then
+            echo "Recent logs:"
+            aws logs get-log-events \
+              --log-group-name "$LOG_GROUP" \
+              --log-stream-name "$LATEST_STREAM" \
+              --limit 20 \
+              --query 'events[*].message' \
+              --output text
+          fi
+
+      - name: Test Summary
+        run: |
+          echo "## ✅ Smoke Tests Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All infrastructure components verified:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Lambda function" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ DynamoDB table" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ EventBridge rule" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Lambda invocation" >> $GITHUB_STEP_SUMMARY

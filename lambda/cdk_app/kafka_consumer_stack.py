@@ -24,6 +24,7 @@ class KafkaConsumerLambdaStack(Stack):
         construct_id: str,
         kafka_bootstrap_servers: str,
         kafka_topic: str,
+        environment: str = "dev",
         **kwargs
     ) -> None:
         """
@@ -34,25 +35,28 @@ class KafkaConsumerLambdaStack(Stack):
             construct_id: Stack identifier
             kafka_bootstrap_servers: Kafka broker addresses
             kafka_topic: Kafka topic to consume from
+            environment: Environment name (dev/test/prod)
             **kwargs: Additional stack properties
         """
         super().__init__(scope, construct_id, **kwargs)
+
+        self.environment = environment
 
         # Lambda layer for Kafka dependencies
         kafka_layer = lambda_.LayerVersion(
             self,
             "KafkaLibrariesLayer",
-            layer_version_name="kafka-libraries",
+            layer_version_name=f"kafka-libraries-{environment}",
             code=lambda_.Code.from_asset("lambda/layer"),
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_11],
-            description="Confluent Kafka library for Python 3.11",
+            description=f"Confluent Kafka library for Python 3.11 ({environment})",
         )
 
         # DynamoDB table for storing Kafka offsets
         offset_table = dynamodb.Table(
             self,
             "KafkaConsumerOffsets",
-            table_name="kafka-consumer-offsets",
+            table_name=f"kafka-consumer-offsets-{environment}",
             partition_key=dynamodb.Attribute(
                 name="consumer_id",
                 type=dynamodb.AttributeType.STRING
@@ -70,7 +74,7 @@ class KafkaConsumerLambdaStack(Stack):
         kafka_consumer_lambda = lambda_.Function(
             self,
             "KafkaConsumerFunction",
-            function_name="kafka-consumer-lambda",
+            function_name=f"kafka-consumer-lambda-{environment}",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_asset("lambda/lambda_function"),
@@ -80,10 +84,11 @@ class KafkaConsumerLambdaStack(Stack):
             environment={
                 "KAFKA_BOOTSTRAP_SERVERS": kafka_bootstrap_servers,
                 "KAFKA_TOPIC": kafka_topic,
-                "KAFKA_GROUP_ID": "lambda-consumer-group",
+                "KAFKA_GROUP_ID": f"lambda-consumer-group-{environment}",
                 "DYNAMODB_TABLE": offset_table.table_name,
                 "MAX_MESSAGES": "1000",
                 "POLL_TIMEOUT": "5.0",
+                "ENVIRONMENT": environment,
             },
             log_retention=logs.RetentionDays.ONE_WEEK,
             retry_attempts=0,  # Disable automatic retries for scheduled events
@@ -109,8 +114,8 @@ class KafkaConsumerLambdaStack(Stack):
         schedule_rule = events.Rule(
             self,
             "KafkaConsumerScheduleRule",
-            rule_name="kafka-consumer-schedule",
-            description="Triggers Kafka consumer Lambda every minute",
+            rule_name=f"kafka-consumer-schedule-{environment}",
+            description=f"Triggers Kafka consumer Lambda every minute ({environment})",
             schedule=events.Schedule.cron(
                 minute="*",  # Every minute
                 hour="*",

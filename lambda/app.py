@@ -11,7 +11,7 @@ This CDK app deploys a Lambda function that:
 """
 
 import os
-from aws_cdk import App, Environment
+from aws_cdk import App, Environment, Tags
 from cdk_app.kafka_consumer_stack import KafkaConsumerLambdaStack
 
 # Configuration - Update these values for your environment
@@ -25,19 +25,28 @@ KAFKA_TOPIC = os.environ.get('KAFKA_TOPIC', 'test-topic')
 AWS_ACCOUNT = os.environ.get('CDK_DEFAULT_ACCOUNT')
 AWS_REGION = os.environ.get('CDK_DEFAULT_REGION', 'us-east-1')
 
+# Environment (dev/test/prod)
+ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
+
 app = App()
 
 # Create the stack
-KafkaConsumerLambdaStack(
+stack = KafkaConsumerLambdaStack(
     app,
-    "KafkaConsumerLambdaStack",
+    f"KafkaConsumerLambdaStack-{ENVIRONMENT}",
     kafka_bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
     kafka_topic=KAFKA_TOPIC,
+    environment=ENVIRONMENT,
     env=Environment(
         account=AWS_ACCOUNT,
         region=AWS_REGION
     ),
-    description="Kafka consumer Lambda with DynamoDB offset storage and EventBridge scheduling"
+    description=f"Kafka consumer Lambda with DynamoDB offset storage and EventBridge scheduling ({ENVIRONMENT})"
 )
+
+# Add tags for all resources
+Tags.of(stack).add("Environment", ENVIRONMENT)
+Tags.of(stack).add("Project", "KafkaConsumer")
+Tags.of(stack).add("ManagedBy", "CDK")
 
 app.synth()
