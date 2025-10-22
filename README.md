@@ -1,5 +1,6 @@
 # Setup Python environment for the first time
 - `poetry install --no-root`
+- `source .venv/bin/activate`
 - `make dev`
 
 # Activate Python environment
