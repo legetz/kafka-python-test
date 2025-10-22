@@ -185,7 +185,7 @@ jobs:
           cache-dependency-path: lambda/package-lock.json
 
       - name: Install Node.js dependencies
-        run: npm install
+        run: cd lambda && npm install
 
       - name: Download layer artifact
         uses: actions/download-artifact@v4
