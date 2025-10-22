@@ -167,6 +167,8 @@ jobs:
     needs: [setup, build-layer]
     env:
       ENVIRONMENT: ${{ needs.setup.outputs.environment }}
+      CDK_DEFAULT_ACCOUNT: ${{ needs.setup.outputs.aws-account }}
+      CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -210,14 +212,12 @@ jobs:
               echo "KAFKA_TOPIC=${{ secrets.KAFKA_TOPIC_PROD }}" >> $GITHUB_ENV
               ;;
           esac
-          
-          echo "CDK_DEFAULT_ACCOUNT=${{ needs.setup.outputs.aws-account }}" >> $GITHUB_ENV
-          echo "CDK_DEFAULT_REGION=${{ env.AWS_REGION }}" >> $GITHUB_ENV
 
       - name: CDK Synth
         run: |
           cd lambda
           npm install -g aws-cdk@^2.1030.0
+          echo "CDK_DEFAULT_ACCOUNT: $CDK_DEFAULT_ACCOUNT"
           cdk synth
 
       - name: Upload CDK template
