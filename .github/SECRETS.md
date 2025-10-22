@@ -42,24 +42,8 @@ gh secret set KAFKA_TOPIC_PROD --body "test-topic-prod"
 echo "✅ All secrets configured!"
 ```
 
-## Verify Secrets
-
-```bash
-# List all secrets
-gh secret list
-
-# Expected output:
-# AWS_ACCOUNT_DEV
-# AWS_ACCOUNT_PROD
-# AWS_ACCOUNT_TEST
-# AWS_DEPLOY_ROLE_NAME
-# KAFKA_BOOTSTRAP_SERVERS_DEV
-# KAFKA_BOOTSTRAP_SERVERS_PROD
-# KAFKA_BOOTSTRAP_SERVERS_TEST
-# KAFKA_TOPIC_DEV
-# KAFKA_TOPIC_PROD
-# KAFKA_TOPIC_TEST
-```
+## List All Secrets
+- `gh secret list`
 
 ## Secrets Mapping
 
@@ -85,14 +69,6 @@ gh secret set KAFKA_TOPIC_PROD --body "new-topic-name"
 # Set from file
 gh secret set KAFKA_BOOTSTRAP_SERVERS_DEV < kafka-servers-dev.txt
 ```
-
-## Using Web UI
-
-Alternatively, configure secrets via GitHub web interface:
-
-1. Go to: `https://github.com/YOUR_ORG/YOUR_REPO/settings/secrets/actions`
-2. Click "New repository secret"
-3. Add each secret from the table above
 
 ## Environment Variables in Workflow
 
