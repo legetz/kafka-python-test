@@ -29,8 +29,8 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
-  NODE_VERSION: '18'
-  AWS_REGION: 'us-east-1'
+  NODE_VERSION: '20'
+  AWS_REGION: 'eu-north-1'
 
 jobs:
   # Determine which environment to deploy to based on branch
@@ -195,8 +195,7 @@ jobs:
 
       - name: Install CDK dependencies
         run: |
-          cd lambda
-          pip install -r requirements.txt
+          pip install -r lambda/requirements.txt
 
       - name: Set environment variables
         run: |
@@ -274,8 +273,7 @@ jobs:
 
       - name: Install CDK dependencies
         run: |
-          cd lambda
-          pip install -r requirements.txt
+          pip install -r lambda/requirements.txt
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
